@@ -168,6 +168,7 @@ static int parse_one_mitigation_resource(void *data, const struct dom_obj *obj)
 {
 	struct mitigation *mig;
 	const char *name;
+	const char *fallback;
 
 	name = dom_obj_attribute_value(obj, "resource");
 	if (name == NULL) {
@@ -175,8 +176,10 @@ static int parse_one_mitigation_resource(void *data, const struct dom_obj *obj)
 		return -1;
 	}
 
+	fallback = dom_obj_attribute_value(obj, "fallback");
+
 	mig = (struct mitigation *)data;
-	mitigation_add_resource(mig, name, obj->content ? obj->content : "");
+	mitigation_add_resource(mig, name, obj->content ? obj->content : "", fallback);
 
 	return 0;
 }

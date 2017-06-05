@@ -20,6 +20,8 @@ struct mitigation *mitigation_create(int level)
 
 	m->level = level;
 	list_init(&m->resources);
+	// initiate the list to store fallback_resources
+	list_init(&m->fallback_resources);
 
 	return m;
 }
@@ -37,7 +39,7 @@ void mitigation_destroy(struct mitigation *m)
 	free(m);
 }
 
-void mitigation_add_resource(struct mitigation *m, const char *name, const char *target_value)
+void mitigation_add_resource(struct mitigation *m, const char *name, const char *target_value, const char *fallback)
 {
 	struct mitigation_resource *r;
 	struct resource *res;
@@ -54,18 +56,37 @@ void mitigation_add_resource(struct mitigation *m, const char *name, const char 
 
 	r->resource = res;
 
-	list_append(&m->resources, &r->list_node);
+	// resources that have the attribute fallback will be added to a seperate list
+	if(fallback)
+		list_append(&m->fallback_resources, &r->list_node);
+	else
+		list_append(&m->resources, &r->list_node);
 }
 
 void mitigation_activate(struct mitigation *m)
 {
 	struct mitigation_resource *r;
 	struct list_node *node;
+	int use_fallback_resources;
+	int ret;
 
+	use_fallback_resources = 0;
 	for_list_node(&m->resources, node) {
 		r = list_entry(node, struct mitigation_resource, list_node);
 		resource_enable(r->resource);
-		resource_write_value(r->resource, r->target_value, strlen(r->target_value));
+		ret = resource_write_value(r->resource, r->target_value, strlen(r->target_value));
+		// for an error in resource_write_value, declare the need to use fallback_resources
+		if(ret)
+			use_fallback_resources = 1;
+	}
+
+	if(use_fallback_resources) {
+		// apply all fallback resources sequentially, like normal resources
+		for_list_node(&m->fallback_resources, node) {
+			r = list_entry(node, struct mitigation_resource, list_node);
+			resource_enable(r->resource);
+			resource_write_value(r->resource, r->target_value, strlen(r->target_value));
+		}
 	}
 }
 
@@ -75,6 +96,12 @@ void mitigation_deactivate(struct mitigation *m)
 	struct list_node *node;
 
 	for_list_node(&m->resources, node) {
+		r = list_entry(node, struct mitigation_resource, list_node);
+		resource_disable(r->resource);
+	}
+
+	// fallback_resources also need to be disabled
+	for_list_node(&m->fallback_resources, node) {
 		r = list_entry(node, struct mitigation_resource, list_node);
 		resource_disable(r->resource);
 	}
